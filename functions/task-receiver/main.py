@@ -270,19 +270,46 @@ def send_to_queue(task, env_vars):
     
     is_fifo = queue_url.endswith('.fifo')
     
+    # ДЛЯ ОТЛАДКИ: Добавляем логирование
+    print(f"Sending message to queue: {queue_url}")
+    print(f"Task ID: {task.get('taskId')}")
+    print(f"Is FIFO: {is_fifo}")
+    
     send_params = {
         'QueueUrl': queue_url,
         'MessageBody': json.dumps(task, ensure_ascii=False),
     }
     
     if is_fifo:
+        # ГЕНЕРИРУЕМ УНИКАЛЬНЫЙ MessageGroupId для параллельной обработки
+        import uuid
         send_params.update({
-            'MessageGroupId': 'summary-generator-tasks',
+            'MessageGroupId': str(uuid.uuid4()),  # Уникальный для каждого сообщения!
             'MessageDeduplicationId': task['taskId']
         })
     
-    response = sqs.send_message(**send_params)
-    return response.get('MessageId', 'unknown')
+    try:
+        response = sqs.send_message(**send_params)
+        
+        # ЛОГИРУЕМ ВЕСЬ ОТВЕТ для отладки
+        print(f"Full SQS response: {response}")
+        print(f"Response keys: {response.keys()}")
+        
+        # Пробуем разные варианты ключей, которые могут быть в ответе
+        message_id = (
+            response.get('MessageId') or 
+            response.get('message_id') or 
+            response.get('id') or 
+            'unknown'
+        )
+        
+        print(f"Extracted message ID: {message_id}")
+        return message_id
+        
+    except Exception as e:
+        print(f"Error sending message to queue: {str(e)}")
+        print(f"Error type: {type(e).__name__}")
+        raise
 
 def create_success_response(task, message_id):
     """Создает успешный HTTP ответ"""

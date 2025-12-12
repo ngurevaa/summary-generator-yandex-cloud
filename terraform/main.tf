@@ -64,51 +64,66 @@ resource "yandex_storage_object" "tasks_html" {
   secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
 }
 
-# 8. Даем SA права на работу с очередью
-resource "yandex_resourcemanager_folder_iam_member" "mq_writer" {
+# 8. Даем права на Message Queue
+resource "yandex_resourcemanager_folder_iam_member" "queue_admin" {
   folder_id = var.folder_id
-  role      = "ymq.writer"
-  member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
-}
-
-resource "yandex_resourcemanager_folder_iam_member" "mq_reader" {
-  folder_id = var.folder_id
-  role      = "ymq.reader"
+  role      = "ymq.admin"  
   member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
 }
 
 # 9. Создаем FIFO очередь для задач 
 resource "yandex_message_queue" "tasks_queue" {
-  name                        = "summary-generator-tasks.fifo"
+  name                        = "summary-generator-tasks"
   visibility_timeout_seconds  = 300
   receive_wait_time_seconds   = 20
   message_retention_seconds   = 1209600
-  fifo_queue                  = true
   
   # Используем ключи от уже созданного SA
   access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
   secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
 }
 
-# 10. Архивация
+resource "yandex_function_trigger" "queue_trigger" {
+  name        = "queue-trigger"
+  description = "Trigger for processing messages from YMQ"
+  
+  message_queue {
+    queue_id           = yandex_message_queue.tasks_queue.arn
+    service_account_id = yandex_iam_service_account.generator_sa.id
+    batch_size         = 1  # Обрабатываем по одному сообщению
+    batch_cutoff       = 10
+  }
+  
+  function {
+    id = yandex_function.task_processor.id
+    service_account_id = yandex_iam_service_account.generator_sa.id
+  }
+}
+
+# 10. Архивация 
 data "archive_file" "task_receiver" {
   type        = "zip"
   source_dir  = "${path.module}/../functions/task-receiver"
   output_path = "${path.module}/../functions/task-receiver.zip"
 }
 
-# 11. Cloud Function с boto3
+data "archive_file" "task_processor" {
+  type        = "zip"
+  source_dir  = "${path.module}/../functions/task-processor"
+  output_path = "${path.module}/../functions/task-processor.zip"
+}
+
+# 11. Cloud Function для создания задачи
 resource "yandex_function" "task_receiver" {
   name               = "task-receiver"
   description        = "Get task and send it to queue"
   user_hash          = data.archive_file.task_receiver.output_base64sha256
   runtime            = "python39"
-  entrypoint         = "main.handler"  # main.py -> функция handler
+  entrypoint         = "main.handler"
   memory             = 128
   execution_timeout  = 15 
   service_account_id = yandex_iam_service_account.generator_sa.id
   
-  # Переменные окружения для boto3
   environment = {
     QUEUE_URL              = yandex_message_queue.tasks_queue.id
     AWS_ACCESS_KEY_ID      = yandex_iam_service_account_static_access_key.sa_static_key.access_key
@@ -116,28 +131,42 @@ resource "yandex_function" "task_receiver" {
     PYTHONUNBUFFERED       = "1"
   }
   
-  # Содержимое функции
   content {
     zip_filename = data.archive_file.task_receiver.output_path
   }
 }
 
-# 3. Разрешаем публичный доступ (для теста)
-resource "yandex_function_iam_binding" "receiver_invoker" {
-  function_id = yandex_function.task_receiver.id
-  role        = "serverless.functions.invoker"
+resource "yandex_function" "task_processor" {
+  name               = "task-processor"
+  description        = "Process tasks from queue: download video, generate summary, create PDF"
+  user_hash          = data.archive_file.task_processor.output_base64sha256
+  runtime            = "python39"
+  entrypoint         = "main.handler"
+  memory             = 512  
+  execution_timeout  = 600 
+  service_account_id = yandex_iam_service_account.generator_sa.id
   
-  members = [
-    "system:allUsers",  # Позже заменить на API Gateway
-  ]
+  environment = {
+    AWS_ACCESS_KEY_ID      = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+    AWS_SECRET_ACCESS_KEY  = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+    BUCKET_NAME            = yandex_storage_bucket.generator_bucket.bucket
+    FOLDER_ID              = var.folder_id
+    PYTHONUNBUFFERED       = "1"
+  }
+  
+  content {
+    zip_filename = data.archive_file.task_processor.output_path
+  }
 }
 
-# 4. Output URL функции
-output "receiver_function_url" {
-  value = "https://functions.yandexcloud.net/${yandex_function.task_receiver.id}"
-  description = "URL для вызова функции приема задач"
+# 12. Даем права на исполнение функции
+resource "yandex_resourcemanager_folder_iam_member" "sa_function_invoker" {
+  folder_id = var.folder_id
+  role      = "serverless.functions.invoker"
+  member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
 }
 
+# 13. API Gateway
 resource "yandex_api_gateway" "summary_generator_api" {
   name = "summary-generator-api-gateway"
   
@@ -182,7 +211,7 @@ paths:
 EOT
 }
 
-# 2. Output API Gateway URL
+# 14. Вывод API Gateway URL
 output "api_gateway_url" {
   value = "https://${yandex_api_gateway.summary_generator_api.domain}"
   description = "URL API Gateway"
