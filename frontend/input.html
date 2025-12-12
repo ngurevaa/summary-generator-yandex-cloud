@@ -215,7 +215,7 @@
         </div>
         
         <div class="links">
-            <a href="#" id="viewTasksLink">📋 Посмотреть все задания</a>
+            <a href="/tasks" id="viewTasksLink">📋 Посмотреть все задания</a>
         </div>
         
         <footer>
@@ -223,12 +223,7 @@
         </footer>
     </div>
 
-    <script src="/config.js"></script>
     <script>
-        const API_GATEWAY_URL = `https://${window.API_URL}`;
-        
-        console.log('Final API Gateway URL:', API_GATEWAY_URL);
-        
         document.getElementById('lectureForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
@@ -254,9 +249,9 @@
             spinner.style.display = 'inline';
             
             try {
-                console.log('Sending request to:', `${API_GATEWAY_URL}/api/tasks`);
+                console.log('Sending request to:', `/api/tasks`);
                 
-                const response = await fetch(`${API_GATEWAY_URL}/api/tasks`, {
+                const response = await fetch(`/api/tasks`, {
                     method: 'POST',
                     mode: 'cors',
                     headers: {
@@ -271,8 +266,7 @@
                 const result = await response.json();
                 
                 if (response.ok) {
-                    alert(result.message || '✅ Задача успешно создана!');
-                    document.getElementById('lectureForm').reset();
+                    window.location.href = '/tasks';
                 } else {
                     const errorMessage = result.error || result.message || 'Неизвестная ошибка';
                     alert(`❌ ${errorMessage}`);

@@ -39,37 +39,13 @@ resource "yandex_storage_bucket" "generator_bucket" {
   bucket     = "generator-bucket"  
   access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
   secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
-  
-  website {
-    index_document = "index.html"
-    error_document = "error.html"
-  }
-  
-  cors_rule {
-    allowed_headers = ["*"]
-    allowed_methods = ["GET", "POST", "PUT", "DELETE"]
-    allowed_origins = ["*"]
-    expose_headers  = ["ETag"]
-    max_age_seconds = 3000
-  }
-  
-  anonymous_access_flags {
-    read = true    # Публичный доступ на чтение
-    list = false   # Не показывать список файлов
-  }
 }
 
-resource "yandex_storage_object" "config_js" {
-  bucket = yandex_storage_bucket.generator_bucket.bucket
-  key    = "config.js"
-  content = "window.API_URL = '${yandex_api_gateway.summary_generator_api.domain}';"
-}
-
-# 5. Загружаем index.html
-resource "yandex_storage_object" "index_html" {
+# 5. Загружаем input.html
+resource "yandex_storage_object" "input_html" {
   bucket       = yandex_storage_bucket.generator_bucket.bucket
-  key          = "index.html"
-  source       = "../frontend/index.html"
+  key          = "input.html"
+  source       = "../frontend/input.html"
   content_type = "text/html; charset=utf-8"
   
   # Используем новую схему вместо acl
@@ -77,9 +53,15 @@ resource "yandex_storage_object" "index_html" {
   secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
 }
 
-# 7. Выводим URL
-output "website_url" {
-  value = "http://${yandex_storage_bucket.generator_bucket.bucket}.website.yandexcloud.net"
+# Загружаем tasks.html
+resource "yandex_storage_object" "tasks_html" {
+  bucket       = yandex_storage_bucket.generator_bucket.bucket
+  key          = "tasks.html"
+  source       = "../frontend/tasks.html"
+  content_type = "text/html; charset=utf-8"
+  
+  access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+  secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
 }
 
 # 8. Даем SA права на работу с очередью
@@ -106,12 +88,6 @@ resource "yandex_message_queue" "tasks_queue" {
   # Используем ключи от уже созданного SA
   access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
   secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
-  
-  # ВАЖНО: Ждем пока SA получит права
-  # depends_on = [
-  #   yandex_resourcemanager_folder_iam_member.mq_writer,
-  #   yandex_resourcemanager_folder_iam_member.mq_reader
-  # ]
 }
 
 # 10. Архивация
@@ -162,8 +138,6 @@ output "receiver_function_url" {
   description = "URL для вызова функции приема задач"
 }
 
-# 13. API Gateway с полной поддержкой CORS
-# 13. API Gateway с правильными CORS заголовками
 resource "yandex_api_gateway" "summary_generator_api" {
   name = "summary-generator-api-gateway"
   
@@ -173,6 +147,20 @@ info:
   title: Summary Generator API
   version: 1.0.0
 paths:
+  /:
+    get:
+      x-yc-apigateway-integration:
+        type: object_storage
+        bucket: ${yandex_storage_bucket.generator_bucket.bucket}
+        object: input.html
+        service_account_id: ${yandex_iam_service_account.generator_sa.id}
+  /tasks:
+    get:
+      x-yc-apigateway-integration:
+        type: object_storage
+        bucket: ${yandex_storage_bucket.generator_bucket.bucket}
+        object: tasks.html
+        service_account_id: ${yandex_iam_service_account.generator_sa.id}
   /api/tasks:
     options:
       x-yc-apigateway-integration:
