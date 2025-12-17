@@ -229,17 +229,6 @@
             
             const lectureTitle = document.getElementById('lectureTitle').value.trim();
             const videoUrl = document.getElementById('videoUrl').value.trim();
-            
-            if (!lectureTitle) {
-                alert('Пожалуйста, введите название лекции');
-                return;
-            }
-            
-            if (!videoUrl) {
-                alert('Пожалуйста, введите ссылку на видео');
-                return;
-            }
-            
             const submitBtn = document.getElementById('submitBtn');
             const submitText = document.getElementById('submitText');
             const spinner = document.getElementById('spinner');
@@ -249,8 +238,6 @@
             spinner.style.display = 'inline';
             
             try {
-                console.log('Sending request to:', `/api/tasks`);
-                
                 const response = await fetch(`/api/tasks`, {
                     method: 'POST',
                     mode: 'cors',
@@ -262,19 +249,18 @@
                         videoUrl: videoUrl
                     })
                 });
-                
-                const result = await response.json();
-                
+
                 if (response.ok) {
-                    window.location.href = '/tasks';
+                    window.location.href = response.headers.get('x-serverless-gateway-path');
                 } else {
-                    const errorMessage = result.error || result.message || 'Неизвестная ошибка';
-                    alert(`❌ ${errorMessage}`);
+                    const result = await response.json();
+                    const errorMessage = result.error;
+                    alert(`${errorMessage}`);
                 }
                 
             } catch (error) {
                 console.error('Fetch error:', error);
-                alert('❌ Не удалось отправить запрос. Проверьте соединение с интернетом.');
+                alert('Не удалось отправить запрос. Проверьте соединение с интернетом.');
                 
             } finally {
                 submitBtn.disabled = false;
