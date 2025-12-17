@@ -10,13 +10,13 @@ terraform {
 provider "yandex" {
   cloud_id  = var.cloud_id
   folder_id = var.folder_id
-  zone      = "ru-central1-a"
-  token = var.yandex_oauth_token
+  zone      = var.zone
+  token = var.YC_TOKEN
 }
 
 # 1. Создаем сервисный аккаунт
 resource "yandex_iam_service_account" "generator_sa" {
-  name        = "generator-sa"
+  name        = "${var.prefix}-generator-sa"
   description = "Service account for Summary Generator"
   folder_id = var.folder_id
 }
@@ -24,7 +24,13 @@ resource "yandex_iam_service_account" "generator_sa" {
 # 2. Даем права на Object Storage
 resource "yandex_resourcemanager_folder_iam_member" "storage_editor" {
   folder_id = var.folder_id
-  role      = "storage.editor"
+  role      = "storage.admin"
+  member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
+}
+
+resource "yandex_resourcemanager_folder_iam_member" "ydb_editor" {
+  folder_id = var.folder_id
+  role      = "ydb.admin"
   member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
 }
 
@@ -36,7 +42,7 @@ resource "yandex_iam_service_account_static_access_key" "sa_static_key" {
 
 # 4. Создаем бакет 
 resource "yandex_storage_bucket" "generator_bucket" {
-  bucket     = "generator-bucket"  
+  bucket     = "${var.prefix}-generator-bucket"  
   access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
   secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
 }
@@ -48,7 +54,6 @@ resource "yandex_storage_object" "input_html" {
   source       = "../frontend/input.html"
   content_type = "text/html; charset=utf-8"
   
-  # Используем новую схему вместо acl
   access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
   secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
 }
@@ -71,31 +76,30 @@ resource "yandex_resourcemanager_folder_iam_member" "queue_admin" {
   member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
 }
 
-# 9. Создаем FIFO очередь для задач 
-resource "yandex_message_queue" "tasks_queue" {
-  name                        = "summary-generator-tasks"
+# 9. Создаем очередь для задач 
+resource "yandex_message_queue" "video_downloader_queue" {
+  name                        = "${var.prefix}-video-downloader-queue"
   visibility_timeout_seconds  = 300
   receive_wait_time_seconds   = 20
   message_retention_seconds   = 1209600
   
-  # Используем ключи от уже созданного SA
   access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
   secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
 }
 
-resource "yandex_function_trigger" "queue_trigger" {
-  name        = "queue-trigger"
-  description = "Trigger for processing messages from YMQ"
+resource "yandex_function_trigger" "video_downloader_trigger" {
+  name        = "${var.prefix}video-downloader-queue-trigger"
+  description = "Trigger for processing messages from video_downloader queue"
   
   message_queue {
-    queue_id           = yandex_message_queue.tasks_queue.arn
+    queue_id           = yandex_message_queue.video_downloader_queue.arn
     service_account_id = yandex_iam_service_account.generator_sa.id
     batch_size         = 1  # Обрабатываем по одному сообщению
     batch_cutoff       = 10
   }
   
   function {
-    id = yandex_function.task_processor.id
+    id = yandex_function.video_downloader.id
     service_account_id = yandex_iam_service_account.generator_sa.id
   }
 }
@@ -107,16 +111,16 @@ data "archive_file" "task_receiver" {
   output_path = "${path.module}/../functions/task-receiver.zip"
 }
 
-data "archive_file" "task_processor" {
+data "archive_file" "video_downloader" {
   type        = "zip"
-  source_dir  = "${path.module}/../functions/task-processor"
-  output_path = "${path.module}/../functions/task-processor.zip"
+  source_dir  = "${path.module}/../functions/video-downloader"
+  output_path = "${path.module}/../functions/video-downloader.zip"
 }
 
 # 11. Cloud Function для создания задачи
 resource "yandex_function" "task_receiver" {
-  name               = "task-receiver"
-  description        = "Get task and send it to queue"
+  name               = "${var.prefix}-task-receiver"
+  description        = "Create task"
   user_hash          = data.archive_file.task_receiver.output_base64sha256
   runtime            = "python39"
   entrypoint         = "main.handler"
@@ -125,9 +129,11 @@ resource "yandex_function" "task_receiver" {
   service_account_id = yandex_iam_service_account.generator_sa.id
   
   environment = {
-    QUEUE_URL              = yandex_message_queue.tasks_queue.id
+    QUEUE_URL              = yandex_message_queue.video_downloader_queue.id
     AWS_ACCESS_KEY_ID      = yandex_iam_service_account_static_access_key.sa_static_key.access_key
     AWS_SECRET_ACCESS_KEY  = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+    YDB_ENDPOINT = yandex_ydb_database_serverless.tasks_database.ydb_api_endpoint
+    YDB_DATABASE = yandex_ydb_database_serverless.tasks_database.database_path
     PYTHONUNBUFFERED       = "1"
   }
   
@@ -136,26 +142,28 @@ resource "yandex_function" "task_receiver" {
   }
 }
 
-resource "yandex_function" "task_processor" {
-  name               = "task-processor"
-  description        = "Process tasks from queue: download video, generate summary, create PDF"
-  user_hash          = data.archive_file.task_processor.output_base64sha256
+resource "yandex_function" "video_downloader" {
+  name               = "${var.prefix}-video-downloader"
+  description        = "Download video to Storage"
+  user_hash          = data.archive_file.video_downloader.output_base64sha256
   runtime            = "python39"
   entrypoint         = "main.handler"
-  memory             = 512  
+  memory             = 1024  
   execution_timeout  = 600 
   service_account_id = yandex_iam_service_account.generator_sa.id
   
   environment = {
+    QUEUE_URL              = yandex_message_queue.video_downloader_queue.id
     AWS_ACCESS_KEY_ID      = yandex_iam_service_account_static_access_key.sa_static_key.access_key
     AWS_SECRET_ACCESS_KEY  = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
-    BUCKET_NAME            = yandex_storage_bucket.generator_bucket.bucket
-    FOLDER_ID              = var.folder_id
+    STORAGE_BUCKET            = yandex_storage_bucket.generator_bucket.bucket
+    YDB_ENDPOINT = yandex_ydb_database_serverless.tasks_database.ydb_api_endpoint
+    YDB_DATABASE = yandex_ydb_database_serverless.tasks_database.database_path
     PYTHONUNBUFFERED       = "1"
   }
   
   content {
-    zip_filename = data.archive_file.task_processor.output_path
+    zip_filename = data.archive_file.video_downloader.output_path
   }
 }
 
@@ -168,7 +176,7 @@ resource "yandex_resourcemanager_folder_iam_member" "sa_function_invoker" {
 
 # 13. API Gateway
 resource "yandex_api_gateway" "summary_generator_api" {
-  name = "summary-generator-api-gateway"
+  name = "${var.prefix}-summary-generator-api-gateway"
   
   spec = <<-EOT
 openapi: 3.0.0
@@ -208,6 +216,15 @@ paths:
         function_id: ${yandex_function.task_receiver.id}
         service_account_id: ${yandex_iam_service_account.generator_sa.id}
         tag: $latest
+      responses:
+        '302':
+          description: Redirect to tasks page
+          headers:
+            Location:
+              description: Redirect URL
+              schema:
+                type: string
+          content: {}  
 EOT
 }
 
@@ -215,4 +232,54 @@ EOT
 output "api_gateway_url" {
   value = "https://${yandex_api_gateway.summary_generator_api.domain}"
   description = "URL API Gateway"
+}
+
+resource "yandex_ydb_database_serverless" "tasks_database" {
+  name      = "${var.prefix}-tasks-db"
+  folder_id = var.folder_id
+
+  serverless_database {
+    storage_size_limit = 1
+  }
+}
+
+resource "yandex_ydb_table" "tasks" {
+  path = "tasks"
+  connection_string = yandex_ydb_database_serverless.tasks_database.ydb_full_endpoint
+  
+  column {
+    name = "taskId"
+    type = "Utf8"
+    not_null = true
+  }
+  column {
+    name = "lectureTitle"
+    type = "Utf8"
+    not_null = true
+  }
+  column {
+    name = "videoUrl"
+    type = "Utf8"
+    not_null = true
+  }
+  column {
+    name = "status"
+    type = "Utf8"
+    not_null = true
+  }
+  column {
+    name = "createdAt"
+    type = "Timestamp"
+    not_null = true
+  }
+  column {
+    name = "pdfUrl"
+    type = "Utf8"
+  }
+  column {
+    name = "errorMessage"
+    type = "Utf8"
+  }
+  
+  primary_key = ["taskId"]
 }
