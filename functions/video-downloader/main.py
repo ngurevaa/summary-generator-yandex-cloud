@@ -11,18 +11,28 @@ def handler(event, context):
     try:
         # 1. Парсинг сообщения из очереди
         message = event['messages'][0]['details']['message']
-        message_body = json.loads(message['body'])
+        data = json.loads(message['body'])
 
         # 2. Обновление статуса задачи
-        task_id = message_body['task_id']
+        task_id = data['task_id']
         update_task_status(task_id, 'В обработке')
 
         # 3. Скачивание видео
-        download_url = message_body['download_url']
-        file_path = download_video(download_url)
+        download_url = data['download_url']
+        video_path = download_video(download_url)
 
         # 4. Загрузка видео в Storage
-        storage_url = upload_video(file_path)
+        storage_url = upload_video(video_path)
+
+        # 5. Отправка сообщения в очередь для извлечения аудио
+        queue_message = {
+            'task_id': task_id,
+            'storage_url': storage_url
+        } 
+        send_to_queue(queue_message)
+
+        # 6. Удаление временных файлов
+        os.remove(video_path)
 
     except Exception as e:
         update_task_status(task_id, 'Ошибка')
@@ -67,9 +77,9 @@ def download_video(url):
     return file_path
 
 def upload_video(file_path):
-    bucket_name = os.environ.get('STORAGE_BUCKET')
-    access_key = os.environ.get('AWS_ACCESS_KEY_ID')
-    secret_key = os.environ.get('AWS_SECRET_ACCESS_KEY')
+    bucket_name = os.environ['STORAGE_BUCKET']
+    access_key = os.environ['AWS_ACCESS_KEY_ID']
+    secret_key = os.environ['AWS_SECRET_ACCESS_KEY']
     
     s3_client = boto3.client(
         's3',
@@ -86,9 +96,30 @@ def upload_video(file_path):
             f,
             bucket_name,
             object_key,
-            ExtraArgs={
-                'ContentType': 'video/mp4'
-            }
+            ExtraArgs={'ContentType': 'video/mp4'}
         )
     storage_url = f"https://{bucket_name}.storage.yandexcloud.net/{object_key}"
     return storage_url
+
+def send_to_queue(task):
+    access_key = os.environ['AWS_ACCESS_KEY_ID']
+    secret_key = os.environ['AWS_SECRET_ACCESS_KEY']
+    queue_url = os.environ['QUEUE_URL']
+    
+    sqs = boto3.client(
+        'sqs',
+        endpoint_url='https://message-queue.api.cloud.yandex.net',
+        region_name='ru-central1',
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        config=Config(
+            signature_version='s3v4',
+            s3={'addressing_style': 'virtual'}
+        )
+    )
+
+    send_params = {
+        'QueueUrl': queue_url,
+        'MessageBody': json.dumps(task, ensure_ascii=False),
+    }
+    sqs.send_message(**send_params)

@@ -124,7 +124,7 @@ def execute_query(query):
     with ydb.Driver(driver_config) as driver:
         driver.wait(timeout=30, fail_fast=True)
         session = driver.table_client.session().create()
-        result_sets = session.transaction().execute(query, commit_tx=True)
+        session.transaction().execute(query, commit_tx=True)
 
 def send_to_queue(task):
     access_key = os.environ['AWS_ACCESS_KEY_ID']
@@ -147,8 +147,7 @@ def send_to_queue(task):
         'QueueUrl': queue_url,
         'MessageBody': json.dumps(task, ensure_ascii=False),
     }
-    response = sqs.send_message(**send_params)
-    message_id = response.get('MessageId')
+    sqs.send_message(**send_params)
 
 def create_error_response(status_code, message):
     return {
