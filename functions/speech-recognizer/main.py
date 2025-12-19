@@ -1,47 +1,42 @@
 import os
 import json
-import subprocess
 import boto3
-import tempfile
-import uuid
 import ydb
 from botocore.config import Config
+import requests
 
 def handler(event, context):
+    print("===SPEECH RECOGNIZER===")
     try:
         # 1. Парсинг сообщения из очереди
         message = event['messages'][0]['details']['message']
         data = json.loads(message['body'])
         task_id = data['task_id']
 
-        # 2. Скачивание видео
+        # 2. Генерация подписанной ссылки на аудио
         storage_url = data['storage_url']
-        video_path = download_video(storage_url)
+        presigned_url = generate_presigned_url(storage_url)
 
-        # 3. Извлечение аудио
-        audio_path = extract_audio(video_path)
+        # 3. Отправка запроса на SpeechKit
+        operation_id = send_to_speechkit(presigned_url)
 
-        # 4. Загрузка аудио в Storage
-        audio_url = upload_audio(audio_path)
-
-        # 5. Отправка сообщения в очередь для извлечения текста
+        # 4. Отправка сообщения в очередь для проверки статуса распознавания
         queue_message = {
             'task_id': task_id,
-            'storage_url': audio_url
+            'operation_id': operation_id,
+            'attempt': 1
         } 
         send_to_queue(queue_message)
-
-        # 6. Удаление временных файлов
-        os.remove(video_path)
-        os.remove(audio_path)
 
     except Exception as e:
         update_task_status(task_id, 'Ошибка')   
 
-def download_video(url):
+def generate_presigned_url(url):
     bucket_name = url.split('.')[0].replace('https://', '')
     object_key = url.split(bucket_name + '.storage.yandexcloud.net/')[1]
-
+    
+    print(f"Generating presigned URL for: bucket={bucket_name}, key={object_key}")
+    
     access_key = os.environ['AWS_ACCESS_KEY_ID']
     secret_key = os.environ['AWS_SECRET_ACCESS_KEY']
     
@@ -50,49 +45,45 @@ def download_video(url):
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key
     )
-    
-    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as video_file:
-        video_path = video_file.name
-        s3.download_file(bucket_name, object_key, video_path)
-    return video_path    
-
-def extract_audio(path):
-    audio_path = path.replace('.mp4', '.mp3')
-    
-    ffmpeg_cmd = [
-        'ffmpeg',
-        '-i', path,
-        '-vn',
-        '-acodec', 'libmp3lame',
-        '-ab', '192k',
-        '-ar', '44100',
-        '-y', audio_path
-    ]
-    subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
-    return audio_path
-
-def upload_audio(path):
-    access_key = os.environ['AWS_ACCESS_KEY_ID']
-    secret_key = os.environ['AWS_SECRET_ACCESS_KEY']
-    bucket_name = os.environ['STORAGE_BUCKET']
-    
-    s3 = boto3.client('s3',
-        endpoint_url='https://storage.yandexcloud.net',
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key
+   
+    presigned_url = s3.generate_presigned_url(
+        'get_object',
+        Params={
+            'Bucket': bucket_name,
+            'Key': object_key,
+            'ResponseContentDisposition': 'attachment'
+        },
+        ExpiresIn=3600
     )
-
-    file_name = uuid.uuid4()
-    object_key = f"audios/{file_name}"
-
-    s3.upload_file(
-        path, 
-        bucket_name, 
-        object_key,
-        ExtraArgs={'ContentType': 'audio/mpeg'}
-        )
+    return presigned_url
     
-    return f"https://{bucket_name}.storage.yandexcloud.net/{object_key}"
+def send_to_speechkit(url):
+    api_key = os.environ['API_KEY']
+    folder_id = os.environ['FOLDER_ID']
+    
+    api_url = "https://stt.api.cloud.yandex.net:443/stt/v3/recognizeFileAsync"
+    
+    headers = {
+        'Authorization': f'Api-Key {api_key}',
+        'x-folder-id': folder_id,
+        'Content-Type': 'application/json'
+    }
+    
+    request_body = {
+        "uri": url, 
+        "recognition_model": {
+            "model": "general",
+            "audio_format": {
+                "container_audio": {
+                    "container_audio_type": "MP3"
+                }
+            }
+        }
+    }
+
+    response = requests.post(api_url, json=request_body, headers=headers)
+    result = response.json()
+    return result['id'] 
 
 def update_task_status(task_id, status):
     query = f"""

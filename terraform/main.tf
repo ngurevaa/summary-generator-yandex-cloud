@@ -34,10 +34,27 @@ resource "yandex_resourcemanager_folder_iam_member" "ydb_editor" {
   member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
 }
 
+resource "yandex_resourcemanager_folder_iam_member" "speechkit_access" {
+  folder_id = var.folder_id
+  role      = "ai.speechkit-stt.user" 
+  member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
+}
+
+resource "yandex_resourcemanager_folder_iam_member" "function_invoker" {
+  folder_id = var.folder_id
+  role      = "serverless.functions.invoker"
+  member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
+}
+
 # 3. Создаем статический ключ
 resource "yandex_iam_service_account_static_access_key" "sa_static_key" {
   service_account_id = yandex_iam_service_account.generator_sa.id
   description        = "Service account static key"
+}
+
+resource "yandex_iam_service_account_api_key" "sa_api_key" {
+  service_account_id = yandex_iam_service_account.generator_sa.id
+  description        = "Service account API key"
 }
 
 # 4. Создаем бакет 
@@ -69,6 +86,16 @@ resource "yandex_storage_object" "tasks_html" {
   secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
 }
 
+resource "yandex_storage_object" "audio_extractor_zip" {
+  bucket       = yandex_storage_bucket.generator_bucket.bucket
+  key          = "audio-extractor.zip"
+  source       = data.archive_file.audio_extractor.output_path
+  content_type = "application/zip"
+
+  access_key   = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+  secret_key   = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+}
+
 # 8. Даем права на Message Queue
 resource "yandex_resourcemanager_folder_iam_member" "queue_admin" {
   folder_id = var.folder_id
@@ -87,19 +114,100 @@ resource "yandex_message_queue" "video_downloader_queue" {
   secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
 }
 
+resource "yandex_message_queue" "audio_extractor_queue" {
+  name                        = "${var.prefix}-audio-extractor-queue"
+  visibility_timeout_seconds  = 300
+  receive_wait_time_seconds   = 20
+  message_retention_seconds   = 1209600
+  
+  access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+  secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+}
+
+resource "yandex_message_queue" "speech_recognizer_queue" {
+  name                        = "${var.prefix}-speech-recognizer-queue"
+  visibility_timeout_seconds  = 300
+  receive_wait_time_seconds   = 20
+  message_retention_seconds   = 1209600
+  
+  access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+  secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+}
+
+resource "yandex_message_queue" "speech_recognizer_checker_queue" {
+  name                        = "${var.prefix}-speech-recognizer-checker-queue"
+  visibility_timeout_seconds  = 300
+  receive_wait_time_seconds   = 20
+  message_retention_seconds   = 1209600
+  
+  access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+  secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+}
+
 resource "yandex_function_trigger" "video_downloader_trigger" {
-  name        = "${var.prefix}video-downloader-queue-trigger"
+  name        = "${var.prefix}-video-downloader-queue-trigger"
   description = "Trigger for processing messages from video_downloader queue"
   
   message_queue {
     queue_id           = yandex_message_queue.video_downloader_queue.arn
     service_account_id = yandex_iam_service_account.generator_sa.id
-    batch_size         = 1  # Обрабатываем по одному сообщению
+    batch_size         = 1
     batch_cutoff       = 10
   }
   
   function {
     id = yandex_function.video_downloader.id
+    service_account_id = yandex_iam_service_account.generator_sa.id
+  }
+}
+
+resource "yandex_function_trigger" "audio_extractor_trigger" {
+  name        = "${var.prefix}-audio-extractor-queue-trigger"
+  description = "Trigger for processing messages from audio_extractor queue"
+  
+  message_queue {
+    queue_id           = yandex_message_queue.audio_extractor_queue.arn
+    service_account_id = yandex_iam_service_account.generator_sa.id
+    batch_size         = 1
+    batch_cutoff       = 10
+  }
+  
+  function {
+    id = yandex_function.audio_extractor.id
+    service_account_id = yandex_iam_service_account.generator_sa.id
+  }
+}
+
+resource "yandex_function_trigger" "speech_recognizer_trigger" {
+  name        = "${var.prefix}-speech-recognizer-queue-trigger"
+  description = "Trigger for processing messages from speech_recognizer_queue"
+  
+  message_queue {
+    queue_id           = yandex_message_queue.speech_recognizer_queue.arn
+    service_account_id = yandex_iam_service_account.generator_sa.id
+    batch_size         = 1
+    batch_cutoff       = 10
+  }
+  
+  function {
+    id = yandex_function.speech_recognizer.id
+    service_account_id = yandex_iam_service_account.generator_sa.id
+  }
+}
+
+resource "yandex_function_trigger" "speech_recognizer_checker_trigger" {
+  name        = "${var.prefix}-speech-recognizer-checker-queue-trigger"
+  description = "Trigger for processing messages from speech_recognizer_checker_queue"
+  
+  message_queue {
+    queue_id           = yandex_message_queue.speech_recognizer_checker_queue.arn
+    service_account_id = yandex_iam_service_account.generator_sa.id
+    batch_size         = 1
+    batch_cutoff       = 10
+  }
+  
+  function {
+    id = yandex_function.speech_recognizer_checker.id
     service_account_id = yandex_iam_service_account.generator_sa.id
   }
 }
@@ -115,6 +223,24 @@ data "archive_file" "video_downloader" {
   type        = "zip"
   source_dir  = "${path.module}/../functions/video-downloader"
   output_path = "${path.module}/../functions/video-downloader.zip"
+}
+
+data "archive_file" "audio_extractor" {
+  type        = "zip"
+  source_dir  = "${path.module}/../functions/audio-extractor"
+  output_path = "${path.module}/../functions/audio-extractor.zip"
+}
+
+data "archive_file" "speech_recognizer" {
+  type        = "zip"
+  source_dir  = "${path.module}/../functions/speech-recognizer"
+  output_path = "${path.module}/../functions/speech-recognizer.zip"
+}
+
+data "archive_file" "speech_recognizer_checker" {
+  type        = "zip"
+  source_dir  = "${path.module}/../functions/speech-recognizer-checker"
+  output_path = "${path.module}/../functions/speech-recognizer-checker.zip"
 }
 
 # 11. Cloud Function для создания задачи
@@ -153,7 +279,7 @@ resource "yandex_function" "video_downloader" {
   service_account_id = yandex_iam_service_account.generator_sa.id
   
   environment = {
-    QUEUE_URL              = yandex_message_queue.video_downloader_queue.id
+    QUEUE_URL              = yandex_message_queue.audio_extractor_queue.id
     AWS_ACCESS_KEY_ID      = yandex_iam_service_account_static_access_key.sa_static_key.access_key
     AWS_SECRET_ACCESS_KEY  = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
     STORAGE_BUCKET            = yandex_storage_bucket.generator_bucket.bucket
@@ -164,6 +290,88 @@ resource "yandex_function" "video_downloader" {
   
   content {
     zip_filename = data.archive_file.video_downloader.output_path
+  }
+}
+
+resource "yandex_function" "audio_extractor" {
+  name               = "${var.prefix}-audio-extractor"
+  description        = "Extracting audio form video using ffmpeg"
+  user_hash          = data.archive_file.audio_extractor.output_base64sha256
+  runtime            = "python39"
+  entrypoint         = "main.handler"
+  memory             = 2048    # 2GB для ffmpeg
+  execution_timeout  = 600     # 10 минут
+  service_account_id = yandex_iam_service_account.generator_sa.id
+
+  environment = {
+    QUEUE_URL             = yandex_message_queue.speech_recognizer_queue.id
+    STORAGE_BUCKET        = yandex_storage_bucket.generator_bucket.bucket
+    AWS_ACCESS_KEY_ID     = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+    AWS_SECRET_ACCESS_KEY = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+    YDB_ENDPOINT          = yandex_ydb_database_serverless.tasks_database.ydb_api_endpoint
+    YDB_DATABASE          = yandex_ydb_database_serverless.tasks_database.database_path
+    PYTHONUNBUFFERED      = "1"
+  }
+
+  package {
+    bucket_name = yandex_storage_object.audio_extractor_zip.bucket
+    object_name = yandex_storage_object.audio_extractor_zip.key
+  }
+
+  depends_on = [yandex_storage_object.audio_extractor_zip]
+}
+
+resource "yandex_function" "speech_recognizer" {
+  name               = "${var.prefix}-speech-recognizer"
+  description        = "Recognize speech"
+  user_hash          = data.archive_file.speech_recognizer.output_base64sha256
+  runtime            = "python39"
+  entrypoint         = "main.handler"
+  memory             = 2048    # 2GB для ffmpeg
+  execution_timeout  = 600     # 10 минут
+  service_account_id = yandex_iam_service_account.generator_sa.id
+  
+  environment = {
+    QUEUE_URL             = yandex_message_queue.speech_recognizer_checker_queue.id
+    AWS_ACCESS_KEY_ID     = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+    AWS_SECRET_ACCESS_KEY = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+    YDB_ENDPOINT          = yandex_ydb_database_serverless.tasks_database.ydb_api_endpoint
+    YDB_DATABASE          = yandex_ydb_database_serverless.tasks_database.database_path
+    FOLDER_ID             = var.folder_id
+    API_KEY               = yandex_iam_service_account_api_key.sa_api_key.secret_key
+    PYTHONUNBUFFERED      = "1"
+  }
+  
+  content {
+    zip_filename = data.archive_file.speech_recognizer.output_path
+  }
+}
+
+resource "yandex_function" "speech_recognizer_checker" {
+  name               = "${var.prefix}-speech-recognizer-checker"
+  description        = "Check recognize speech status"
+  user_hash          = data.archive_file.speech_recognizer_checker.output_base64sha256
+  runtime            = "python39"
+  entrypoint         = "main.handler"
+  memory             = 2048    # 2GB для ffmpeg
+  execution_timeout  = 600     # 10 минут
+  service_account_id = yandex_iam_service_account.generator_sa.id
+  
+  environment = {
+    SELF_QUEUE_URL         = yandex_message_queue.speech_recognizer_checker_queue.id
+    QUEUE_URL             = yandex_message_queue.speech_recognizer_checker_queue.id
+    AWS_ACCESS_KEY_ID     = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+    AWS_SECRET_ACCESS_KEY = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+    STORAGE_BUCKET        = yandex_storage_bucket.generator_bucket.bucket
+    YDB_ENDPOINT          = yandex_ydb_database_serverless.tasks_database.ydb_api_endpoint
+    YDB_DATABASE          = yandex_ydb_database_serverless.tasks_database.database_path
+    FOLDER_ID             = var.folder_id
+    API_KEY               = yandex_iam_service_account_api_key.sa_api_key.secret_key
+    PYTHONUNBUFFERED      = "1"
+  }
+  
+  content {
+    zip_filename = data.archive_file.speech_recognizer_checker.output_path
   }
 }
 
