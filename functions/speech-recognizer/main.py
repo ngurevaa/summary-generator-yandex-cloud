@@ -6,7 +6,6 @@ from botocore.config import Config
 import requests
 
 def handler(event, context):
-    print("===SPEECH RECOGNIZER===")
     try:
         # 1. Парсинг сообщения из очереди
         message = event['messages'][0]['details']['message']
@@ -34,8 +33,6 @@ def handler(event, context):
 def generate_presigned_url(url):
     bucket_name = url.split('.')[0].replace('https://', '')
     object_key = url.split(bucket_name + '.storage.yandexcloud.net/')[1]
-    
-    print(f"Generating presigned URL for: bucket={bucket_name}, key={object_key}")
     
     access_key = os.environ['AWS_ACCESS_KEY_ID']
     secret_key = os.environ['AWS_SECRET_ACCESS_KEY']

@@ -31,7 +31,7 @@ def handler(event, context):
                 'task_id': task_id,
                 'storage_url': storage_url
             }
-            # send_to_queue(queue_message)
+            send_to_queue(queue_message)
 
             # 7. Удаление временных файлов
             os.remove(recognized_text_path)

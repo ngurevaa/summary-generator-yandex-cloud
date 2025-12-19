@@ -103,6 +103,12 @@ resource "yandex_resourcemanager_folder_iam_member" "queue_admin" {
   member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
 }
 
+resource "yandex_resourcemanager_folder_iam_member" "gpt_user" {
+  folder_id = var.folder_id  # или yandex_resourcemanager_folder.folder.id
+  role      = "ai.languageModels.user"
+  member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
+}
+
 # 9. Создаем очередь для задач 
 resource "yandex_message_queue" "video_downloader_queue" {
   name                        = "${var.prefix}-video-downloader-queue"
@@ -136,6 +142,16 @@ resource "yandex_message_queue" "speech_recognizer_queue" {
 
 resource "yandex_message_queue" "speech_recognizer_checker_queue" {
   name                        = "${var.prefix}-speech-recognizer-checker-queue"
+  visibility_timeout_seconds  = 300
+  receive_wait_time_seconds   = 20
+  message_retention_seconds   = 1209600
+  
+  access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+  secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+}
+
+resource "yandex_message_queue" "note_generator_queue" {
+  name                        = "${var.prefix}-note-generator-queue"
   visibility_timeout_seconds  = 300
   receive_wait_time_seconds   = 20
   message_retention_seconds   = 1209600
@@ -212,6 +228,23 @@ resource "yandex_function_trigger" "speech_recognizer_checker_trigger" {
   }
 }
 
+resource "yandex_function_trigger" "note_generator_trigger" {
+  name        = "${var.prefix}-note-generator-queue-trigger"
+  description = "Trigger for processing messages from note_generator_queue"
+  
+  message_queue {
+    queue_id           = yandex_message_queue.note_generator_queue.arn
+    service_account_id = yandex_iam_service_account.generator_sa.id
+    batch_size         = 1
+    batch_cutoff       = 10
+  }
+  
+  function {
+    id = yandex_function.note_generator.id
+    service_account_id = yandex_iam_service_account.generator_sa.id
+  }
+}
+
 # 10. Архивация 
 data "archive_file" "task_receiver" {
   type        = "zip"
@@ -241,6 +274,12 @@ data "archive_file" "speech_recognizer_checker" {
   type        = "zip"
   source_dir  = "${path.module}/../functions/speech-recognizer-checker"
   output_path = "${path.module}/../functions/speech-recognizer-checker.zip"
+}
+
+data "archive_file" "note_generator" {
+  type        = "zip"
+  source_dir  = "${path.module}/../functions/note-generator"
+  output_path = "${path.module}/../functions/note-generator.zip"
 }
 
 # 11. Cloud Function для создания задачи
@@ -359,7 +398,7 @@ resource "yandex_function" "speech_recognizer_checker" {
   
   environment = {
     SELF_QUEUE_URL         = yandex_message_queue.speech_recognizer_checker_queue.id
-    QUEUE_URL             = yandex_message_queue.speech_recognizer_checker_queue.id
+    QUEUE_URL             = yandex_message_queue.note_generator_queue.id
     AWS_ACCESS_KEY_ID     = yandex_iam_service_account_static_access_key.sa_static_key.access_key
     AWS_SECRET_ACCESS_KEY = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
     STORAGE_BUCKET        = yandex_storage_bucket.generator_bucket.bucket
@@ -372,6 +411,33 @@ resource "yandex_function" "speech_recognizer_checker" {
   
   content {
     zip_filename = data.archive_file.speech_recognizer_checker.output_path
+  }
+}
+
+resource "yandex_function" "note_generator" {
+  name               = "${var.prefix}-note-generator"
+  description        = "Generate note using GPT"
+  user_hash          = data.archive_file.note_generator.output_base64sha256
+  runtime            = "python39"
+  entrypoint         = "main.handler"
+  memory             = 2048    # 2GB для ffmpeg
+  execution_timeout  = 600     # 10 минут
+  service_account_id = yandex_iam_service_account.generator_sa.id
+  
+  environment = {
+    QUEUE_URL             = yandex_message_queue.speech_recognizer_checker_queue.id
+    AWS_ACCESS_KEY_ID     = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+    AWS_SECRET_ACCESS_KEY = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+    STORAGE_BUCKET        = yandex_storage_bucket.generator_bucket.bucket
+    YDB_ENDPOINT          = yandex_ydb_database_serverless.tasks_database.ydb_api_endpoint
+    YDB_DATABASE          = yandex_ydb_database_serverless.tasks_database.database_path
+    FOLDER_ID             = var.folder_id
+    API_KEY               = yandex_iam_service_account_api_key.sa_api_key.secret_key
+    PYTHONUNBUFFERED      = "1"
+  }
+  
+  content {
+    zip_filename = data.archive_file.note_generator.output_path
   }
 }
 

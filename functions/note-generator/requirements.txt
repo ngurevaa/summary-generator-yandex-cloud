@@ -1,0 +1,5 @@
+boto3==1.34.128
+botocore==1.34.128
+requests==2.31.0
+ydb==3.22.3
+markdown-pdf==1.8
