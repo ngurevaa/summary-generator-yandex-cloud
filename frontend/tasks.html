@@ -22,12 +22,13 @@
         }
         
         .container {
-            max-width: 1000px;
+            max-width: 1400px; /* Шире для дополнительных колонок */
             margin: 40px auto;
             background: white;
             border-radius: 15px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
             padding: 40px;
+            overflow-x: auto; /* Для горизонтального скролла на мобильных */
         }
         
         h1 {
@@ -75,24 +76,47 @@
             background: linear-gradient(to right, #2980b9, #3498db);
         }
         
+        .refresh-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-left: 10px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .refresh-btn:hover {
+            background: #5a6268;
+        }
+        
         .tasks-table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 20px;
+            min-width: 1200px; /* Минимальная ширина для всех колонок */
         }
         
         .tasks-table th {
             background: #f8f9fa;
-            padding: 12px;
+            padding: 15px 12px;
             text-align: left;
             border-bottom: 2px solid #dee2e6;
             color: #2c3e50;
             font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
         
         .tasks-table td {
-            padding: 12px;
+            padding: 15px 12px;
             border-bottom: 1px solid #dee2e6;
+            vertical-align: top;
         }
         
         .tasks-table tr:hover {
@@ -100,61 +124,128 @@
         }
         
         .status {
-            padding: 4px 8px;
-            border-radius: 4px;
+            padding: 6px 12px;
+            border-radius: 6px;
             font-size: 0.9em;
             font-weight: 600;
+            display: inline-block;
+            min-width: 120px;
+            text-align: center;
         }
         
         .status.queued {
             background-color: #fff3cd;
             color: #856404;
+            border: 1px solid #ffeaa7;
         }
         
         .status.processing {
             background-color: #d1ecf1;
             color: #0c5460;
+            border: 1px solid #bee5eb;
         }
         
         .status.completed {
             background-color: #d4edda;
             color: #155724;
+            border: 1px solid #c3e6cb;
         }
         
         .status.error {
             background-color: #f8d7da;
             color: #721c24;
+            border: 1px solid #f5c6cb;
         }
         
         .no-tasks {
             text-align: center;
-            padding: 40px;
+            padding: 60px 20px;
+            color: #6c757d;
+            font-size: 1.2em;
+            background: #f8f9fa;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        
+        .download-link {
+            background: linear-gradient(to right, #28a745, #20c997);
+            color: white;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: transform 0.2s;
+        }
+        
+        .download-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+            text-decoration: none;
+        }
+        
+        .video-link {
+            color: #3498db;
+            text-decoration: none;
+            word-break: break-all;
+            display: inline-block;
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .video-link:hover {
+            text-decoration: underline;
+        }
+        
+        .task-id {
+            font-family: 'Courier New', monospace;
+            background: #f8f9fa;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+        
+        .error-message {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #dc3545;
+            font-size: 0.95em;
+            line-height: 1.4;
+        }
+        
+        .empty-cell {
+            color: #adb5bd;
+            font-style: italic;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
             color: #6c757d;
             font-size: 1.1em;
         }
         
-        .refresh-btn {
-            background: #6c757d;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-left: 10px;
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
         }
         
-        .refresh-btn:hover {
-            background: #5a6268;
-        }
-        
-        .download-link {
-            color: #28a745;
-            text-decoration: none;
-            font-weight: 600;
-        }
-        
-        .download-link:hover {
-            text-decoration: underline;
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
         
         footer {
@@ -166,19 +257,34 @@
             border-top: 1px solid #eee;
         }
         
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #6c757d;
-        }
-        
-        .error-message {
-            background-color: #f8d7da;
-            color: #721c24;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            display: none;
+        /* Адаптивность */
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+                margin: 20px auto;
+            }
+            
+            .links {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                align-items: center;
+            }
+            
+            .links a, .refresh-btn {
+                width: 100%;
+                max-width: 300px;
+                margin: 5px 0;
+                text-align: center;
+            }
+            
+            .tasks-table {
+                font-size: 0.9em;
+            }
+            
+            .tasks-table td, .tasks-table th {
+                padding: 10px 8px;
+            }
         }
     </style>
 </head>
@@ -187,138 +293,152 @@
         <h1>📋 Список заданий</h1>
         <p class="subtitle">Все созданные задания на генерацию конспектов</p>
         
-        <div id="errorMessage" class="error-message"></div>
-        
         <div class="links">
             <a href="/" class="create-task">➕ Создать новое задание</a>
-            <a href="#" id="refreshBtn" class="refresh-btn">🔄 Обновить</a>
+            <button id="refreshBtn" class="refresh-btn">
+                🔄 Обновить список
+            </button>
         </div>
         
         <div id="tasksContainer">
-            <div class="loading">Загрузка заданий...</div>
+            <div class="loading">
+                <div class="loading-spinner"></div>
+                <p>Загрузка заданий...</p>
+            </div>
         </div>
         
         <footer>
-            <p>Для обновления статусов обновите страницу</p>
+            <p>Для обновления статусов нажмите кнопку "Обновить список" или перезагрузите страницу</p>
         </footer>
     </div>
 
-    <script src="/config.js"></script>
     <script>
-        const API_GATEWAY_URL = `https://${window.API_URL}`;
-        
         async function loadTasks() {
             const container = document.getElementById('tasksContainer');
-            const errorMessage = document.getElementById('errorMessage');
             
-            container.innerHTML = '<div class="loading">Загрузка заданий...</div>';
-            errorMessage.style.display = 'none';
+            container.innerHTML = `
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <p>Загрузка заданий...</p>
+                </div>
+            `;
             
             try {
-                // TODO: Реализовать получение заданий из API
-                // const response = await fetch(`${API_GATEWAY_URL}/api/tasks`);
-                // const tasks = await response.json();
-                
-                // Временные данные для демонстрации
-                const tasks = [
-                    {
-                        id: 'task-001',
-                        lectureTitle: 'Математический анализ. Лекция 1',
-                        createdAt: '2024-01-10T11:25:17Z',
-                        status: 'completed',
-                        videoUrl: 'https://disk.yandex.ru/i/...',
-                        pdfUrl: 'https://storage.example.com/result.pdf',
-                        error: null
-                    },
-                    {
-                        id: 'task-002',
-                        lectureTitle: 'Физика. Квантовая механика',
-                        createdAt: '2024-01-10T10:15:00Z',
-                        status: 'processing',
-                        videoUrl: 'https://disk.yandex.ru/i/...',
-                        pdfUrl: null,
-                        error: null
-                    },
-                    {
-                        id: 'task-003',
-                        lectureTitle: 'История искусств',
-                        createdAt: '2024-01-09T14:30:00Z',
-                        status: 'error',
-                        videoUrl: 'https://disk.yandex.ru/i/...',
-                        pdfUrl: null,
-                        error: 'Не удалось преобразовать аудио в текст'
-                    }
-                ];
-                
-                if (tasks.length === 0) {
-                    container.innerHTML = '<div class="no-tasks">Заданий пока нет</div>';
-                    return;
+                const response = await fetch(`/api/tasks`);
+                if (!response.ok) {
+                    throw new Error(`Сервер вернул ошибку: ${response.status}`);
                 }
                 
-                const html = `
-                    <table class="tasks-table">
-                        <thead>
-                            <tr>
-                                <th>Дата создания</th>
-                                <th>Название лекции</th>
-                                <th>Статус</th>
-                                <th>Ссылка на PDF</th>
-                                <th>Ошибка</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${tasks.map(task => `
-                                <tr>
-                                    <td>${new Date(task.createdAt).toLocaleString()}</td>
-                                    <td>${task.lectureTitle}</td>
-                                    <td>
-                                        <span class="status ${task.status}">
-                                            ${getStatusText(task.status)}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        ${task.status === 'completed' && task.pdfUrl 
-                                            ? `<a href="${task.pdfUrl}" class="download-link" target="_blank">📥 Скачать</a>`
-                                            : '—'
-                                        }
-                                    </td>
-                                    <td>
-                                        ${task.error || '—'}
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                `;
-                
-                container.innerHTML = html;
+                const tasks = await response.json();
+                showTasks(tasks);
                 
             } catch (error) {
-                console.error('Error loading tasks:', error);
-                errorMessage.textContent = `Ошибка при загрузке заданий: ${error.message}`;
-                errorMessage.style.display = 'block';
-                container.innerHTML = '';
+                container.innerHTML = `
+                    <div class="error-message">
+                        <strong>Не удалось загрузить задания:</strong><br>
+                        ${error.message}<br><br>
+                        <button onclick="loadTasks()" class="refresh-btn" style="background: #dc3545;">
+                            🔄 Попробовать снова
+                        </button>
+                    </div>
+                `;
             }
         }
-        
-        function getStatusText(status) {
-            const statusMap = {
-                'queued': 'В очереди',
-                'processing': 'В обработке',
-                'completed': 'Завершено',
-                'error': 'Ошибка'
-            };
-            return statusMap[status] || status;
+
+        function showTasks(tasks) {
+            const container = document.getElementById('tasksContainer');
+            
+            if (!tasks || tasks.length === 0) {
+                container.innerHTML = `
+                    <div class="no-tasks">
+                        <p>📭 Заданий пока нет</p>
+                        <p style="margin-top: 10px;">Создайте первое задание, чтобы начать работу</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = `
+                <table class="tasks-table">
+                    <thead>
+                        <tr>
+                            <th>Дата создания</th>
+                            <th>ID задания</th>
+                            <th>Название лекции</th>
+                            <th>Ссылка на видео</th>
+                            <th>Статус</th>
+                            <th>PDF документ</th>
+                            <th>Ошибка</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+            
+            tasks.forEach(task => {
+                const date = task.createdAt ? formatDate(task.createdAt) : '—';
+                
+                const pdfLink = (task.status === 'Успешно завершено' && task.pdfUrl) 
+                    ? `<a href="${task.pdfUrl}" class="download-link" target="_blank">📥 Скачать</a>`
+                    : '<span class="empty-cell">—</span>';
+                
+                const errorMessage = (task.status === 'error' && task.errorMessage)
+                    ? `<div class="error-message">${task.errorMessage}</div>`
+                    : '<span class="empty-cell">—</span>';
+                
+                html += `
+                    <tr>
+                        <td>${date}</td>
+                        <td><span class="task-id">${task.taskId || '—'}</span></td>
+                        <td><strong>${task.lectureTitle || 'Без названия'}</strong></td>
+                        <td>
+                            ${task.videoUrl 
+                                ? `<a href="${task.videoUrl}" class="video-link" target="_blank">Видео</a>`
+                                : '<span class="empty-cell">—</span>'
+                            }
+                        </td>
+                        <td><span class="status">${task.status}</span></td>
+                        <td>${pdfLink}</td>
+                        <td>${errorMessage}</td>
+                    </tr>`;
+            });
+            
+            html += `</tbody></table>`;
+            container.innerHTML = html;
         }
-        
-        // Загружаем задания при загрузке страницы
-        document.addEventListener('DOMContentLoaded', loadTasks);
-        
-        // Обработчик кнопки обновления
-        document.getElementById('refreshBtn').addEventListener('click', function(e) {
-            e.preventDefault();
+
+        function formatDate(dateString) {
+            try {
+                const date = new Date(dateString);
+                return date.toLocaleString('ru-RU', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            } catch {
+                return '—';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
             loadTasks();
         });
-    </script>
+
+        document.getElementById('refreshBtn').addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            const btn = this;
+            const oldText = btn.innerHTML;
+            btn.innerHTML = '⏳ Загрузка...';
+            btn.disabled = true;
+            
+            loadTasks();
+            
+            setTimeout(() => {
+                btn.innerHTML = oldText;
+                btn.disabled = false;
+            }, 2000);
+        });
+        </script>
 </body>
 </html>

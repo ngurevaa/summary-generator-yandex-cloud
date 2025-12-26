@@ -22,7 +22,7 @@ resource "yandex_iam_service_account" "generator_sa" {
 }
 
 # 2. Даем права на Object Storage
-resource "yandex_resourcemanager_folder_iam_member" "storage_editor" {
+resource "yandex_resourcemanager_folder_iam_member" "storage_admin" {
   folder_id = var.folder_id
   role      = "storage.admin"
   member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
@@ -46,6 +46,18 @@ resource "yandex_resourcemanager_folder_iam_member" "function_invoker" {
   member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
 }
 
+resource "yandex_resourcemanager_folder_iam_member" "queue_admin" {
+  folder_id = var.folder_id
+  role      = "ymq.admin"  
+  member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
+}
+
+resource "yandex_resourcemanager_folder_iam_member" "gpt_user" {
+  folder_id = var.folder_id  # или yandex_resourcemanager_folder.folder.id
+  role      = "ai.languageModels.user"
+  member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
+}
+
 # 3. Создаем статический ключ
 resource "yandex_iam_service_account_static_access_key" "sa_static_key" {
   service_account_id = yandex_iam_service_account.generator_sa.id
@@ -59,9 +71,53 @@ resource "yandex_iam_service_account_api_key" "sa_api_key" {
 
 # 4. Создаем бакет 
 resource "yandex_storage_bucket" "generator_bucket" {
-  bucket     = "${var.prefix}-generator-bucket"  
-  access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
-  secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+  bucket        = "${var.prefix}-generator-bucket"  
+  force_destroy = true
+  access_key    = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+  secret_key    = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+
+  lifecycle_rule {
+    id      = "auto-delete-videos-after-1-day"
+    enabled = true
+
+    filter {
+      prefix = "videos/" 
+    }
+
+    expiration {
+      days = 1
+    }
+  }
+
+  lifecycle_rule {
+    id      = "auto-delete-audios-after-1-day"
+    enabled = true
+
+    filter {
+      prefix = "audios/"
+    }
+
+    expiration {
+      days = 1
+    }
+  }
+
+  lifecycle_rule {
+    id      = "auto-delete-recognitions-after-1-day"
+    enabled = true
+
+    filter {
+      prefix = "recognitions/" # Видеофайлы
+    }
+
+    expiration {
+      days = 1
+    }
+  }
+
+  depends_on = [
+    yandex_resourcemanager_folder_iam_member.storage_admin
+  ]
 }
 
 # 5. Загружаем input.html
@@ -96,19 +152,6 @@ resource "yandex_storage_object" "audio_extractor_zip" {
   secret_key   = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
 }
 
-# 8. Даем права на Message Queue
-resource "yandex_resourcemanager_folder_iam_member" "queue_admin" {
-  folder_id = var.folder_id
-  role      = "ymq.admin"  
-  member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
-}
-
-resource "yandex_resourcemanager_folder_iam_member" "gpt_user" {
-  folder_id = var.folder_id  # или yandex_resourcemanager_folder.folder.id
-  role      = "ai.languageModels.user"
-  member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
-}
-
 # 9. Создаем очередь для задач 
 resource "yandex_message_queue" "video_downloader_queue" {
   name                        = "${var.prefix}-video-downloader-queue"
@@ -118,6 +161,10 @@ resource "yandex_message_queue" "video_downloader_queue" {
   
   access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
   secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+
+  depends_on = [
+    yandex_resourcemanager_folder_iam_member.queue_admin
+  ]
 }
 
 resource "yandex_message_queue" "audio_extractor_queue" {
@@ -128,6 +175,10 @@ resource "yandex_message_queue" "audio_extractor_queue" {
   
   access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
   secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+
+  depends_on = [
+    yandex_resourcemanager_folder_iam_member.queue_admin
+  ]
 }
 
 resource "yandex_message_queue" "speech_recognizer_queue" {
@@ -138,6 +189,10 @@ resource "yandex_message_queue" "speech_recognizer_queue" {
   
   access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
   secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+
+  depends_on = [
+    yandex_resourcemanager_folder_iam_member.queue_admin
+  ]
 }
 
 resource "yandex_message_queue" "speech_recognizer_checker_queue" {
@@ -148,6 +203,10 @@ resource "yandex_message_queue" "speech_recognizer_checker_queue" {
   
   access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
   secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+
+  depends_on = [
+    yandex_resourcemanager_folder_iam_member.queue_admin
+  ]
 }
 
 resource "yandex_message_queue" "note_generator_queue" {
@@ -158,6 +217,10 @@ resource "yandex_message_queue" "note_generator_queue" {
   
   access_key = yandex_iam_service_account_static_access_key.sa_static_key.access_key
   secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+
+  depends_on = [
+    yandex_resourcemanager_folder_iam_member.queue_admin
+  ]
 }
 
 resource "yandex_function_trigger" "video_downloader_trigger" {
@@ -280,6 +343,12 @@ data "archive_file" "note_generator" {
   type        = "zip"
   source_dir  = "${path.module}/../functions/note-generator"
   output_path = "${path.module}/../functions/note-generator.zip"
+}
+
+data "archive_file" "tasks_getter" {
+  type        = "zip"
+  source_dir  = "${path.module}/../functions/tasks-getter"
+  output_path = "${path.module}/../functions/tasks-getter.zip"
 }
 
 # 11. Cloud Function для создания задачи
@@ -441,6 +510,29 @@ resource "yandex_function" "note_generator" {
   }
 }
 
+resource "yandex_function" "tasks_getter" {
+  name               = "${var.prefix}-tasks-getter"
+  description        = "Get tasks list from YDB"
+  user_hash          = data.archive_file.tasks_getter.output_base64sha256
+  runtime            = "python39"
+  entrypoint         = "main.handler"
+  memory             = 128
+  execution_timeout  = 15 
+  service_account_id = yandex_iam_service_account.generator_sa.id
+  
+  environment = {
+    YDB_ENDPOINT = yandex_ydb_database_serverless.tasks_database.ydb_api_endpoint
+    YDB_DATABASE = yandex_ydb_database_serverless.tasks_database.database_path
+    AWS_ACCESS_KEY_ID     = yandex_iam_service_account_static_access_key.sa_static_key.access_key
+    AWS_SECRET_ACCESS_KEY = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
+    PYTHONUNBUFFERED = "1"
+  }
+  
+  content {
+    zip_filename = data.archive_file.tasks_getter.output_path
+  }
+}
+
 # 12. Даем права на исполнение функции
 resource "yandex_resourcemanager_folder_iam_member" "sa_function_invoker" {
   folder_id = var.folder_id
@@ -484,6 +576,12 @@ paths:
           Access-Control-Allow-Headers: "Content-Type, Authorization, X-Requested-With"
           Access-Control-Max-Age: "86400"
         http_code: 200
+    get:
+      x-yc-apigateway-integration:
+        type: cloud-functions
+        function_id: ${yandex_function.tasks_getter.id}
+        service_account_id: ${yandex_iam_service_account.generator_sa.id}
+        tag: $latest
     post:
       x-yc-apigateway-integration:
         type: cloud-functions

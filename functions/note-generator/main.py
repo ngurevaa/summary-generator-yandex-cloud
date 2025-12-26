@@ -21,7 +21,6 @@ def handler(event, context):
         # 3. Генерация конспекта через YandexGPT
         lecture_title = get_lecture_title(task_id)
         note_md_content = generate_note_with_yagpt(text_content, lecture_title)
-        print(note_md_content)
         
         # 4. Конвертация конспекта в PDF
         pdf_path = convert_markdown_to_pdf(note_md_content)
