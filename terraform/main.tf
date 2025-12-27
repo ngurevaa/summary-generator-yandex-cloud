@@ -588,6 +588,13 @@ resource "yandex_ydb_database_serverless" "tasks_database" {
   }
 }
 
+resource "time_sleep" "wait_60_seconds" {
+  depends_on = [yandex_ydb_database_serverless.tasks_database]
+  
+  create_duration = "60s"
+  destroy_duration = "10s"
+}
+
 resource "yandex_ydb_table" "tasks" {
   path = "tasks"
   connection_string = yandex_ydb_database_serverless.tasks_database.ydb_full_endpoint
@@ -627,4 +634,8 @@ resource "yandex_ydb_table" "tasks" {
   }
   
   primary_key = ["taskId"]
+
+  depends_on = [
+    time_sleep.wait_60_seconds
+  ]
 }
