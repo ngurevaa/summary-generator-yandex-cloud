@@ -37,10 +37,8 @@ def handler(event, context):
         os.remove(video_path)
 
     except ValidationError as e:
-        print(e)
         update_task_status_with_error(task_id, 'Ошибка', str(e))
     except Exception as e:
-        print(e)
         update_task_status_with_error(task_id, 'Ошибка', 'Произошла ошибка во время загрузки видео')
 
 def validate_request(body):

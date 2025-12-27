@@ -374,7 +374,6 @@
                     <tbody>`;
             
             tasks.forEach(task => {
-                console.log(task)
                 const date = task.createdAt ? formatDate(task.createdAt) : '—';
                 
                 const pdfLink = (task.status === 'Успешно завершено' && task.pdfUrl) 
