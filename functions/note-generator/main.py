@@ -23,19 +23,16 @@ def handler(event, context):
         note_md_content = generate_note_with_yagpt(text_content, lecture_title)
         
         # 4. Конвертация конспекта в PDF
-        pdf_path = convert_markdown_to_pdf(note_md_content)
+        pdf = convert_markdown_to_pdf(note_md_content)
         
         # 5. Загрузка PDF в Storage
-        storage_url = upload_pdf_to_storage(pdf_path)
+        storage_url = upload_pdf_to_storage(pdf)
         
         # 6. Обновление статуса задачи в YDB
         update_task_with_result(task_id, storage_url)
         
-        # 7. Удаление временных файлов
-        os.remove(pdf_path)
-        
     except Exception as e:
-        update_task_status(task_id, 'Ошибка')
+        update_task_status(task_id, 'Ошибка', 'Произошла ошибка во время генерации конспекта')
 
 def download_text_from_storage(storage_url):
     bucket_name = storage_url.split('//')[1].split('.')[0]
@@ -157,10 +154,10 @@ def update_task_with_result(task_id, pdf_url):
     """
     execute_query(query)
 
-def update_task_status(task_id, status):
+def update_task_status(task_id, status, error):
     query = f"""
     UPDATE tasks 
-    SET status = '{status}'
+    SET status = '{status}', errorMessage = '{error}'
     WHERE taskId = '{task_id}';
     """
     execute_query(query)

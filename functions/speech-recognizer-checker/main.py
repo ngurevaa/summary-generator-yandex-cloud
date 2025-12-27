@@ -50,7 +50,7 @@ def handler(event, context):
         else:
             raise Exception("Recognition complete with error")
     except Exception as e:
-        update_task_status(task_id, 'Ошибка')
+        update_task_status(task_id, 'Ошибка', 'Произошла ошибка во время распознавания речи')
     
 
 def check_speech_recognize_status(operation_id):
@@ -164,10 +164,10 @@ def resend_to_queue_with_delay(message):
     }
     sqs.send_message(**send_params)
 
-def update_task_status(task_id, status):
+def update_task_status(task_id, status, error):
     query = f"""
     UPDATE tasks 
-    SET status = '{status}'
+    SET status = '{status}', errorMessage = '{error}'
     WHERE taskId = '{task_id}';
     """
     execute_query(query)

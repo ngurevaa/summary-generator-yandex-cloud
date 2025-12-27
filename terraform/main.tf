@@ -14,14 +14,12 @@ provider "yandex" {
   token = var.YC_TOKEN
 }
 
-# 1. Создаем сервисный аккаунт
 resource "yandex_iam_service_account" "generator_sa" {
   name        = "${var.prefix}-generator-sa"
-  description = "Service account for Summary Generator"
+  description = "Service account for Note Generator"
   folder_id = var.folder_id
 }
 
-# 2. Даем права на Object Storage
 resource "yandex_resourcemanager_folder_iam_member" "storage_admin" {
   folder_id = var.folder_id
   role      = "storage.admin"
@@ -53,12 +51,11 @@ resource "yandex_resourcemanager_folder_iam_member" "queue_admin" {
 }
 
 resource "yandex_resourcemanager_folder_iam_member" "gpt_user" {
-  folder_id = var.folder_id  # или yandex_resourcemanager_folder.folder.id
+  folder_id = var.folder_id  
   role      = "ai.languageModels.user"
   member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
 }
 
-# 3. Создаем статический ключ
 resource "yandex_iam_service_account_static_access_key" "sa_static_key" {
   service_account_id = yandex_iam_service_account.generator_sa.id
   description        = "Service account static key"
@@ -69,7 +66,6 @@ resource "yandex_iam_service_account_api_key" "sa_api_key" {
   description        = "Service account API key"
 }
 
-# 4. Создаем бакет 
 resource "yandex_storage_bucket" "generator_bucket" {
   bucket        = "${var.prefix}-generator-bucket"  
   force_destroy = true
@@ -107,7 +103,7 @@ resource "yandex_storage_bucket" "generator_bucket" {
     enabled = true
 
     filter {
-      prefix = "recognitions/" # Видеофайлы
+      prefix = "recognitions/"
     }
 
     expiration {
@@ -120,7 +116,6 @@ resource "yandex_storage_bucket" "generator_bucket" {
   ]
 }
 
-# 5. Загружаем input.html
 resource "yandex_storage_object" "input_html" {
   bucket       = yandex_storage_bucket.generator_bucket.bucket
   key          = "input.html"
@@ -131,7 +126,6 @@ resource "yandex_storage_object" "input_html" {
   secret_key = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
 }
 
-# Загружаем tasks.html
 resource "yandex_storage_object" "tasks_html" {
   bucket       = yandex_storage_bucket.generator_bucket.bucket
   key          = "tasks.html"
@@ -152,7 +146,6 @@ resource "yandex_storage_object" "audio_extractor_zip" {
   secret_key   = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
 }
 
-# 9. Создаем очередь для задач 
 resource "yandex_message_queue" "video_downloader_queue" {
   name                        = "${var.prefix}-video-downloader-queue"
   visibility_timeout_seconds  = 300
@@ -225,7 +218,7 @@ resource "yandex_message_queue" "note_generator_queue" {
 
 resource "yandex_function_trigger" "video_downloader_trigger" {
   name        = "${var.prefix}-video-downloader-queue-trigger"
-  description = "Trigger for processing messages from video_downloader queue"
+  description = "Trigger for processing messages from video_downloader_queue"
   
   message_queue {
     queue_id           = yandex_message_queue.video_downloader_queue.arn
@@ -235,14 +228,14 @@ resource "yandex_function_trigger" "video_downloader_trigger" {
   }
   
   function {
-    id = yandex_function.video_downloader.id
+    id                 = yandex_function.video_downloader.id
     service_account_id = yandex_iam_service_account.generator_sa.id
   }
 }
 
 resource "yandex_function_trigger" "audio_extractor_trigger" {
   name        = "${var.prefix}-audio-extractor-queue-trigger"
-  description = "Trigger for processing messages from audio_extractor queue"
+  description = "Trigger for processing messages from audio_extractor_queue"
   
   message_queue {
     queue_id           = yandex_message_queue.audio_extractor_queue.arn
@@ -252,7 +245,7 @@ resource "yandex_function_trigger" "audio_extractor_trigger" {
   }
   
   function {
-    id = yandex_function.audio_extractor.id
+    id                 = yandex_function.audio_extractor.id
     service_account_id = yandex_iam_service_account.generator_sa.id
   }
 }
@@ -269,7 +262,7 @@ resource "yandex_function_trigger" "speech_recognizer_trigger" {
   }
   
   function {
-    id = yandex_function.speech_recognizer.id
+    id                 = yandex_function.speech_recognizer.id
     service_account_id = yandex_iam_service_account.generator_sa.id
   }
 }
@@ -286,7 +279,7 @@ resource "yandex_function_trigger" "speech_recognizer_checker_trigger" {
   }
   
   function {
-    id = yandex_function.speech_recognizer_checker.id
+    id                 = yandex_function.speech_recognizer_checker.id
     service_account_id = yandex_iam_service_account.generator_sa.id
   }
 }
@@ -303,12 +296,11 @@ resource "yandex_function_trigger" "note_generator_trigger" {
   }
   
   function {
-    id = yandex_function.note_generator.id
+    id                 = yandex_function.note_generator.id
     service_account_id = yandex_iam_service_account.generator_sa.id
   }
 }
 
-# 10. Архивация 
 data "archive_file" "task_receiver" {
   type        = "zip"
   source_dir  = "${path.module}/../functions/task-receiver"
@@ -351,7 +343,6 @@ data "archive_file" "tasks_getter" {
   output_path = "${path.module}/../functions/tasks-getter.zip"
 }
 
-# 11. Cloud Function для создания задачи
 resource "yandex_function" "task_receiver" {
   name               = "${var.prefix}-task-receiver"
   description        = "Create task"
@@ -366,8 +357,8 @@ resource "yandex_function" "task_receiver" {
     QUEUE_URL              = yandex_message_queue.video_downloader_queue.id
     AWS_ACCESS_KEY_ID      = yandex_iam_service_account_static_access_key.sa_static_key.access_key
     AWS_SECRET_ACCESS_KEY  = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
-    YDB_ENDPOINT = yandex_ydb_database_serverless.tasks_database.ydb_api_endpoint
-    YDB_DATABASE = yandex_ydb_database_serverless.tasks_database.database_path
+    YDB_ENDPOINT           = yandex_ydb_database_serverless.tasks_database.ydb_api_endpoint
+    YDB_DATABASE           = yandex_ydb_database_serverless.tasks_database.database_path
     PYTHONUNBUFFERED       = "1"
   }
   
@@ -382,7 +373,7 @@ resource "yandex_function" "video_downloader" {
   user_hash          = data.archive_file.video_downloader.output_base64sha256
   runtime            = "python39"
   entrypoint         = "main.handler"
-  memory             = 1024  
+  memory             = 2048  
   execution_timeout  = 600 
   service_account_id = yandex_iam_service_account.generator_sa.id
   
@@ -390,9 +381,9 @@ resource "yandex_function" "video_downloader" {
     QUEUE_URL              = yandex_message_queue.audio_extractor_queue.id
     AWS_ACCESS_KEY_ID      = yandex_iam_service_account_static_access_key.sa_static_key.access_key
     AWS_SECRET_ACCESS_KEY  = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
-    STORAGE_BUCKET            = yandex_storage_bucket.generator_bucket.bucket
-    YDB_ENDPOINT = yandex_ydb_database_serverless.tasks_database.ydb_api_endpoint
-    YDB_DATABASE = yandex_ydb_database_serverless.tasks_database.database_path
+    STORAGE_BUCKET         = yandex_storage_bucket.generator_bucket.bucket
+    YDB_ENDPOINT           = yandex_ydb_database_serverless.tasks_database.ydb_api_endpoint
+    YDB_DATABASE           = yandex_ydb_database_serverless.tasks_database.database_path
     PYTHONUNBUFFERED       = "1"
   }
   
@@ -407,8 +398,8 @@ resource "yandex_function" "audio_extractor" {
   user_hash          = data.archive_file.audio_extractor.output_base64sha256
   runtime            = "python39"
   entrypoint         = "main.handler"
-  memory             = 2048    # 2GB для ffmpeg
-  execution_timeout  = 600     # 10 минут
+  memory             = 2048    
+  execution_timeout  = 600    
   service_account_id = yandex_iam_service_account.generator_sa.id
 
   environment = {
@@ -426,7 +417,9 @@ resource "yandex_function" "audio_extractor" {
     object_name = yandex_storage_object.audio_extractor_zip.key
   }
 
-  depends_on = [yandex_storage_object.audio_extractor_zip]
+  depends_on = [
+    yandex_storage_object.audio_extractor_zip
+  ]
 }
 
 resource "yandex_function" "speech_recognizer" {
@@ -435,8 +428,8 @@ resource "yandex_function" "speech_recognizer" {
   user_hash          = data.archive_file.speech_recognizer.output_base64sha256
   runtime            = "python39"
   entrypoint         = "main.handler"
-  memory             = 2048    # 2GB для ffmpeg
-  execution_timeout  = 600     # 10 минут
+  memory             = 1024    
+  execution_timeout  = 600    
   service_account_id = yandex_iam_service_account.generator_sa.id
   
   environment = {
@@ -461,12 +454,12 @@ resource "yandex_function" "speech_recognizer_checker" {
   user_hash          = data.archive_file.speech_recognizer_checker.output_base64sha256
   runtime            = "python39"
   entrypoint         = "main.handler"
-  memory             = 2048    # 2GB для ffmpeg
-  execution_timeout  = 600     # 10 минут
+  memory             = 1024   
+  execution_timeout  = 600     
   service_account_id = yandex_iam_service_account.generator_sa.id
   
   environment = {
-    SELF_QUEUE_URL         = yandex_message_queue.speech_recognizer_checker_queue.id
+    SELF_QUEUE_URL        = yandex_message_queue.speech_recognizer_checker_queue.id
     QUEUE_URL             = yandex_message_queue.note_generator_queue.id
     AWS_ACCESS_KEY_ID     = yandex_iam_service_account_static_access_key.sa_static_key.access_key
     AWS_SECRET_ACCESS_KEY = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
@@ -489,8 +482,8 @@ resource "yandex_function" "note_generator" {
   user_hash          = data.archive_file.note_generator.output_base64sha256
   runtime            = "python39"
   entrypoint         = "main.handler"
-  memory             = 2048    # 2GB для ffmpeg
-  execution_timeout  = 600     # 10 минут
+  memory             = 2048   
+  execution_timeout  = 600    
   service_account_id = yandex_iam_service_account.generator_sa.id
   
   environment = {
@@ -516,16 +509,16 @@ resource "yandex_function" "tasks_getter" {
   user_hash          = data.archive_file.tasks_getter.output_base64sha256
   runtime            = "python39"
   entrypoint         = "main.handler"
-  memory             = 128
-  execution_timeout  = 15 
+  memory             = 512
+  execution_timeout  = 100 
   service_account_id = yandex_iam_service_account.generator_sa.id
   
   environment = {
-    YDB_ENDPOINT = yandex_ydb_database_serverless.tasks_database.ydb_api_endpoint
-    YDB_DATABASE = yandex_ydb_database_serverless.tasks_database.database_path
+    YDB_ENDPOINT          = yandex_ydb_database_serverless.tasks_database.ydb_api_endpoint
+    YDB_DATABASE          = yandex_ydb_database_serverless.tasks_database.database_path
     AWS_ACCESS_KEY_ID     = yandex_iam_service_account_static_access_key.sa_static_key.access_key
     AWS_SECRET_ACCESS_KEY = yandex_iam_service_account_static_access_key.sa_static_key.secret_key
-    PYTHONUNBUFFERED = "1"
+    PYTHONUNBUFFERED      = "1"
   }
   
   content {
@@ -533,14 +526,6 @@ resource "yandex_function" "tasks_getter" {
   }
 }
 
-# 12. Даем права на исполнение функции
-resource "yandex_resourcemanager_folder_iam_member" "sa_function_invoker" {
-  folder_id = var.folder_id
-  role      = "serverless.functions.invoker"
-  member    = "serviceAccount:${yandex_iam_service_account.generator_sa.id}"
-}
-
-# 13. API Gateway
 resource "yandex_api_gateway" "summary_generator_api" {
   name = "${var.prefix}-summary-generator-api-gateway"
   
@@ -565,17 +550,6 @@ paths:
         object: tasks.html
         service_account_id: ${yandex_iam_service_account.generator_sa.id}
   /api/tasks:
-    options:
-      x-yc-apigateway-integration:
-        type: dummy
-        content:
-          '*': ""
-        http_headers:
-          Access-Control-Allow-Origin: "*"
-          Access-Control-Allow-Methods: "POST, OPTIONS, GET"
-          Access-Control-Allow-Headers: "Content-Type, Authorization, X-Requested-With"
-          Access-Control-Max-Age: "86400"
-        http_code: 200
     get:
       x-yc-apigateway-integration:
         type: cloud-functions
@@ -600,7 +574,6 @@ paths:
 EOT
 }
 
-# 14. Вывод API Gateway URL
 output "api_gateway_url" {
   value = "https://${yandex_api_gateway.summary_generator_api.domain}"
   description = "URL API Gateway"

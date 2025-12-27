@@ -11,97 +11,43 @@ def handler(event, context):
     try:
         # 1. Парсинг тела запроса
         body = json.loads(event['body'])
-        
-        # 2. Валидация полей
-        validate_request(body)
-        
-        # 3. Проверка доступности файла на Яндекс.Диске через API
+        lecture_title = body['lectureTitle'].strip()
         video_url = body['videoUrl'].strip()
-        download_url = validate_yandex_disk_url(video_url)
 
-        # 4. Сохранение метаинформации о задаче
+        # 2. Сохранение метаинформации о задаче
         task_info = {
             'task_id': str(uuid.uuid4()),
-            'lecture_title': body['lectureTitle'].strip(),
-            'video_url': body['videoUrl'].strip(),
+            'lecture_title': lecture_title,
+            'video_url': video_url,
         }
         save_task_info(task_info)
 
-        # 5. Отправка сообщения в очередь для загрузки видео
+        # 3. Отправка сообщения в очередь для загрузки видео
         queue_message = {
             'task_id': task_info['task_id'],
-            'download_url': download_url
+            'lecture_title': lecture_title,
+            'video_url': video_url,
         } 
         send_to_queue(queue_message)
         
-        # 6. Возврат успешного ответа
+        # 4. Возврат успешного ответа
         return {
             'statusCode': 302,
             'headers': {
                 'Location': '/tasks'
             }
         }
-        
-    except ValidationError as e:
-        return create_error_response(400, str(e))
-    except YandexDiskError as e:
-        return create_error_response(400, str(e))
+    
     except Exception as e:
-        return create_error_response(500, "Произошла неожиданная ошибка.\nПопробуйте позднее.")
-
-# === Вспомогательные функции ===
-
-def validate_request(body):
-    required_fields = ['lectureTitle', 'videoUrl']
-    for field in required_fields:
-        if not body.get(field):
-            raise ValidationError(f"Поле '{field}' обязательно для заполнения")
-    
-    if not body['lectureTitle'].strip():
-        raise ValidationError("Название лекции не может быть пустым")
-    
-    if not body['videoUrl'].strip():
-        raise ValidationError("Ссылка на видео не может быть пустой")
-
-def validate_yandex_disk_url(url):
-    api_url = "https://cloud-api.yandex.net/v1/disk/public/resources"
-    
-    params = {
-        'public_key': url,
-        'fields': 'name,mime_type,type,file'
-    }
-   
-    try:
-        response = requests.get(api_url, params=params, timeout=15)
-        
-        if response.status_code == 200:
-            data = response.json()
-            return analyze_api_response(data)
-            
-        elif response.status_code == 404:
-            raise YandexDiskError("Файл не найден по указанной ссылке.")
-            
-        elif response.status_code == 403:
-            raise YandexDiskError("Доступ к файлу запрещен.\nУбедитесь, что файл доступен по публичной ссылке.")
-    except Exception as e:
-        raise YandexDiskError("Произошла неожиданная ошибка.\nПопробуйте позднее.")
-
-def analyze_api_response(data):
-    resource_type = data.get('type', '')
-    
-    if resource_type == 'dir':
-        raise YandexDiskError("Ссылка ведет на папку, а не на файл.\nПожалуйста, укажите ссылку на конкретный видеофайл.")
-    
-    elif resource_type != 'file':
-        raise YandexDiskError("Неизвестный тип ресурса. Ожидается видеофайл.")
-    
-    mime_type = data.get('mime_type', '')
-    video_mime_prefixes = ['video/', 'application/x-mpegURL', 'application/vnd.apple.mpegurl']
-    
-    if not any(mime_type.startswith(prefix) for prefix in video_mime_prefixes):
-        raise YandexDiskError("Неизвестный тип ресурса. Ожидается видеофайл.")
-    
-    return data.get('file', '')
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'error': "Произошла неожиданная ошибка.\nПопробуйте позднее."
+            }, ensure_ascii=False),
+            'headers': {
+                'Content-Type': 'application/json; charset=utf-8'
+            }
+        }
     
 def save_task_info(task_info):
     query = f"""
@@ -148,23 +94,3 @@ def send_to_queue(task):
         'MessageBody': json.dumps(task, ensure_ascii=False),
     }
     sqs.send_message(**send_params)
-
-def create_error_response(status_code, message):
-    return {
-        'statusCode': status_code,
-        'body': json.dumps({
-            'error': message
-        }, ensure_ascii=False),
-        'headers': {
-            'Content-Type': 'application/json; charset=utf-8'
-        }
-    }
-
-# === Кастомные исключения ===
-class ValidationError(Exception):
-    """Исключение для ошибок валидации"""
-    pass
-
-class YandexDiskError(Exception):
-    """Исключение для ошибок Яндекс.Диска"""
-    pass

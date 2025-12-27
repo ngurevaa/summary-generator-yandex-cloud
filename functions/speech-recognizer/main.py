@@ -28,7 +28,7 @@ def handler(event, context):
         send_to_queue(queue_message)
 
     except Exception as e:
-        update_task_status(task_id, 'Ошибка')   
+        update_task_status(task_id, 'Ошибка', 'Произошла ошибка во время распознавания речи')   
 
 def generate_presigned_url(url):
     bucket_name = url.split('.')[0].replace('https://', '')
@@ -82,10 +82,10 @@ def send_to_speechkit(url):
     result = response.json()
     return result['id'] 
 
-def update_task_status(task_id, status):
+def update_task_status(task_id, status, error):
     query = f"""
     UPDATE tasks 
-    SET status = '{status}'
+    SET status = '{status}', errorMessage = '{error}'
     WHERE taskId = '{task_id}';
     """
     execute_query(query)

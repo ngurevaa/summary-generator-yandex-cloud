@@ -374,15 +374,16 @@
                     <tbody>`;
             
             tasks.forEach(task => {
+                console.log(task)
                 const date = task.createdAt ? formatDate(task.createdAt) : '—';
                 
                 const pdfLink = (task.status === 'Успешно завершено' && task.pdfUrl) 
                     ? `<a href="${task.pdfUrl}" class="download-link" target="_blank">📥 Скачать</a>`
                     : '<span class="empty-cell">—</span>';
                 
-                const errorMessage = (task.status === 'error' && task.errorMessage)
+                const errorMessage = (task.status === 'Ошибка' && task.errorMessage)
                     ? `<div class="error-message">${task.errorMessage}</div>`
-                    : '<span class="empty-cell">—</span>';
+                    : '<span class="empty-cell">—</span>';    
                 
                 html += `
                     <tr>
@@ -390,10 +391,7 @@
                         <td><span class="task-id">${task.taskId || '—'}</span></td>
                         <td><strong>${task.lectureTitle || 'Без названия'}</strong></td>
                         <td>
-                            ${task.videoUrl 
-                                ? `<a href="${task.videoUrl}" class="video-link" target="_blank">Видео</a>`
-                                : '<span class="empty-cell">—</span>'
-                            }
+                            <a href="${task.videoUrl}" class="video-link" target="_blank">${task.videoUrl}</a    
                         </td>
                         <td><span class="status">${task.status}</span></td>
                         <td>${pdfLink}</td>
@@ -407,8 +405,9 @@
 
         function formatDate(dateString) {
             try {
-                const date = new Date(dateString);
+                const date = new Date(dateString + 'Z');
                 return date.toLocaleString('ru-RU', {
+                    timeZone: 'Europe/Moscow',
                     day: '2-digit',
                     month: '2-digit',
                     year: 'numeric',

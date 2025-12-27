@@ -36,7 +36,7 @@ def handler(event, context):
         os.remove(audio_path)
 
     except Exception as e:
-        update_task_status(task_id, 'Ошибка')   
+        update_task_status(task_id, 'Ошибка', 'Произошла ошибка во время извлечения аудио из видео')   
 
 def download_video(url):
     bucket_name = url.split('.')[0].replace('https://', '')
@@ -94,10 +94,10 @@ def upload_audio(path):
     
     return f"https://{bucket_name}.storage.yandexcloud.net/{object_key}"
 
-def update_task_status(task_id, status):
+def update_task_status(task_id, status, error):
     query = f"""
     UPDATE tasks 
-    SET status = '{status}'
+    SET status = '{status}', errorMessage = '{error}'
     WHERE taskId = '{task_id}';
     """
     execute_query(query)
